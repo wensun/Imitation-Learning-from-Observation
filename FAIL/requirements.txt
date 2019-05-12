@@ -5,4 +5,4 @@ tqdm
 ipython
 argparse
 ipdb
-mujoco_py
+mujoco-py<1.50.2,>=1.50.1

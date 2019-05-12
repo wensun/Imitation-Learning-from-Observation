@@ -7,6 +7,7 @@
 * Install tensorflow (version 1.12.0)
 * Install the OpenAI baselines package given with the code. To do this, activate your virtual env and go inside `baselines/` and run `pip install -e .`
 * Install other dependencies. To do this, activate your virtual env and go inside `FAIL/` and run `pip install -r requirements.txt`
+* Install Mujoco-py: `pip install -U 'mujoco-py<1.50.2,>=1.50.1'`
 * We expect the reader to have a mujoco license to run the mujoco experiments in the paper
 
 # Running the code
