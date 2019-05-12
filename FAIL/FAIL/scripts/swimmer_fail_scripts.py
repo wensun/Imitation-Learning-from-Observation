@@ -7,7 +7,8 @@ parser.add_argument('--num_expert_trajs', type = int, help='number of expert tra
 parser.add_argument('--num_timesteps', type=int, help='total number of training samples', default =1000000)
 args = parser.parse_args()
 
-seeds = [128038,470925,491264,791625, 100880, 203246,437783,491756,620105,875689]
+#seeds = [128038,470925,491264,791625, 100880, 203246,437783,491756,620105,875689]
+seeds = [128038]
 
 print("training SwimmerDiscrete FAIL with 10 random seeds...")
 

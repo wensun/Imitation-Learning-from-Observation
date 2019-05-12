@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 import numpy as np
 import gym
+from gym import wrappers
 
 from mlp_policy import *
 from minmax import minmax_solver
@@ -43,11 +44,64 @@ def argsparser():
 
     return parser.parse_args()
 
+
+def record_video(monitored_env, pis, env_id, ep_id):
+    print("recording video for {}".format(env_id))
+    if env_id[0:5] == "Swimm" or env_id[0:5] == "Hoppe":
+        H = 300
+    else:
+        H = 50
+    num_policies = len(pis)
+    success = False
+    images = []
+    #ob = monitored_env.reset()
+
+    trials = 20
+    for trial in range(trials):
+        ob = monitored_env.reset()
+        traj_images = []
+        for i in range(H):
+            monitored_env.env._render_callback()
+            img = monitored_env.env.sim.render(500,500)
+            #print(img.shape)
+            traj_images.append(img)
+            #if i < ep_id:
+            #    action = pis[i].act(True,ob)
+            #else:
+            #    action = pis[ep_id-1].act(True,ob)
+            pi_id = i%num_policies
+            #print(pi_id)
+            action = pis[pi_id].act(True,ob)
+            ob_next, rew,done,info = monitored_env.step(action)
+            ob = ob_next;
+            if info['is_success'] == True:
+                images += traj_images
+                break;
+
+    filename = "video_record/{0}_{1}.p".format(env_id, ep_id)
+
+    print("at ep: {0}_{1}".format(ep_id, np.array(images).shape))
+    #pickle.dump(np.array(images), open(filename, 'wb'))
+    np.save(filename, np.array(images))
+    print("Done recording this run")
+
+
+
 def main(args):
     print(args)
     U.make_session(num_cpu=1).__enter__()
     set_global_seeds(args.seed)
     env = gym.make(args.env_id)
+
+    if args.env_id[0:5] == "Swimm":
+        env_monitor = gym.make("Swimmer-v2")
+    elif args.env_id[0:5] == "Hoppe":
+        env_monitor = gym.make("Hopper-v2")
+    else:
+        env_monitor = gym.make(args.env_id)
+    #env_monitor = wrappers.Monitor(env_2, 'video/{0}'.format(args.env_id),force=True)
+    #env_monitor = env_2
+
     ob_space = env.observation_space
     ac_space = env.action_space
     H = args.horizon
@@ -69,42 +123,27 @@ def main(args):
     U.initialize()
     env.seed(args.seed)
 
+    if os.path.exists(args.expert_path) is not True:
+        os.system("wget http://kalman.ml.cmu.edu/FAIL_datasets/{}".format(args.expert_path))
+
     #test initial policy performance:
     return_info = traj_segment_generate(pis,env,args.env_id,20, True, None)
     initial_avg_rew = return_info['avg_rew']
     print("before training, avg_rew is {0}".format(initial_avg_rew))
 
     if args.task == 'train':
-        expert_trajs,success_rate=extract_expert_traj_observations(args.expert_path, args.num_expert_trajs)
+        expert_trajs,success_rate=extract_expert_traj_observations(args.expert_path, args.num_expert_trajs, args.env_id)
         assert expert_trajs.ndim == 3
         assert expert_trajs.shape[0] == args.num_expert_trajs
         assert expert_trajs.shape[1] >= H
-        final_perf = train_offline(env, args.env_id, pis, expert_trajs, H, num_roll_in, T, lr, warm_start=args.warm_start,mixing = args.mixing)
+        final_perf = train_offline(env, args.env_id, pis, expert_trajs, H, num_roll_in, T, lr, warm_start=args.warm_start,mixing = args.mixing, monitor_env = env_monitor)
         #train_online(env, args.env_id, pis, expert_trajs, H, args.num_timesteps, args.num_roll_in, lr)
 
-    #elif args.task == 'evaluate':
-    #    avg_traj_rew, std_traj_rew = runner(env,pis, H, stochastic = False, num_traj = 50)
     env.close()
     return final_perf
 
-def main_repeat(args):
-    all_perf = []
-    #seeds = (np.random.rand(5)*1e6).astype(int)
-    print("training on five random seeds...")
-    seeds = [608249, 301207, 955449, 107439,  82627]
-    all_perf.append(seeds)
-    all_perf.append(args)
 
-    for i in range(len(seeds)):
-        args.seed = seeds[i]
-        print("at the {0} th repeat with seed {1}".format(i, args.seed))
-        final_perf = main(args)
-        all_perf.append(final_perf)
-
-    pickle.dump(all_perf, open(args.env+"final_perf.p", 'wb'))
-
-
-def js_from_samples(X1, X2):
+def js_from_samples(X1, X2, env_id = None):
     #X1, X2: n x d matrices
     mean_0 = np.mean(X1, axis = 0)
     std_0 = np.std(X1, axis = 0) + 1e-7
@@ -117,10 +156,99 @@ def js_from_samples(X1, X2):
     ikl = 0.5*(np.sum(std_1/std_0) + (mean_1 - mean_0).dot(np.diag(1./std_0)).dot(mean_1 - mean_0) 
              - X1.shape[1] + np.log(np.sum(std_0)/np.sum(std_1)))
 
-    return (kl+ikl)/2.
+    if env_id[0:5] == "Fetch":
+        X1_sub = X1[:,0:9]
+        X2_sub = X2[:,0:9]
+        avg_dis_to_goal = [np.mean(np.sum(X1_sub[:,:3]*X1_sub[:,:3],axis=1)**0.5), np.mean(np.sum(X1_sub[:,3:6]*X1_sub[:,3:6],axis=1)**0.5), np.mean(np.sum(X1_sub[:,6:9]*X1_sub[:,6:9],axis=1)**0.5)]
+        avg_dis_to_goal_exp = [np.mean(np.sum(X2_sub[:,:3]*X2_sub[:,:3],axis=1)**0.5), np.mean(np.sum(X2_sub[:,3:6]*X2_sub[:,3:6],axis=1)**0.5), np.mean(np.sum(X2_sub[:,6:9]*X2_sub[:,6:9],axis=1)**0.5)]
+    else:
+        X1_sub = X1[:,-15:]
+        X2_sub = X2[:,-15:]
+        avg_dis_to_goal = np.mean(np.sum(X1_sub*X1_sub,axis=1)**0.5)
+        avg_dis_to_goal_exp = np.mean(np.sum(X2_sub*X2_sub,axis=1)**0.5)
 
 
-def train_offline(env, env_id, pis, expert_trajs, H, num_roll_in, T, lr, warm_start = False, mixing = False):
+    return (kl+ikl)/2.,avg_dis_to_goal,avg_dis_to_goal_exp
+
+
+
+def train_online(env, env_id, pis, expert_trajs, H, num_roll_in, T, lr, warm_start = False, mixing = False, batch_size = 512):
+
+    for h in range(H-1):
+        print("############## training pi_{0} ###################".format(h))
+        num_batches = np.ceil(num_roll_in/batch_size)
+        print("total number of batches here: {0}".format(num_batches))
+        for epoch in range(int(num_batches)):
+            #roll in with pi_0, ..., pi_{h-1}, then use pi_h as ref
+            roll_in_info = traj_segment_generate(pis[0:h], env, env_id, batch_size, stochastic=True, pi_ref = pis[h])
+            #train pi_0, pi_1, .., pi_{h-1}:
+            game_us = []
+            for ih in range(h):
+                pi = pis[ih]
+                X_ih = roll_in_info['trajs_obs'][:,ih]
+                A_ih = roll_in_info['trajs_act'][:,ih]
+                A_log_ih = roll_in_info['trajs_act_logp'][:,ih]
+                if ih+1 == h:
+                    X_ihp1 = roll_in_info['obs_after_roll_in']
+                else:
+                    X_ihp1 = roll_in_info['trajs_obs'][:,ih+1]
+                game_u = minmax_solver(X_ih,A_ih, X_ihp1, expert_trajs[:,ih+1], A_log_ih, pi, 1, lr)
+                game_us.append(game_u)
+
+            #train pi_h:
+            X_h = roll_in_info['obs_after_roll_in']
+            A_h = roll_in_info['act_ref']
+            A_ref_logp = roll_in_info['act_ref_logp']
+            X_hp1 = roll_in_info['obs_after_ref']
+            avg_rew_sofar = roll_in_info['avg_rew']
+            success_rate = roll_in_info['success_rate']
+            #print("## at training pi_{0}, collect {1} many triples, avg_rew_so_far {2}, success_rate {3} ##".format(h,X_h.shape[0], avg_rew_sofar, success_rate))
+            X_star_hp1 = expert_trajs[:,h+1,:]
+            game_utilities = minmax_solver(X_h, A_h, X_hp1, X_star_hp1, A_ref_logp, pis[h], 1, lr)
+            game_us.append(game_utilities)
+
+            if epoch%5 == 0:
+                print(game_us)
+
+    final_perf = traj_segment_generate(pis, env, env_id, 200, stochastic=True, pi_ref = None)
+    return final_perf
+
+
+def train_one_policy(h,env, env_id, pis, expert_trajs, H, num_roll_in, T, lr, pi_ref, warm_start, train_all = False):
+    roll_in_info = traj_segment_generate(pis[0:h], env,env_id, num_roll_in, stochastic=True, pi_ref = pi_ref)
+
+    X_h = roll_in_info['obs_after_roll_in']
+    A_h = roll_in_info['act_ref']
+
+    if h > 0:
+        tmp_A = roll_in_info['trajs_act'][:, h-1]
+        print(np.mean(np.sum(tmp_A*tmp_A,axis=1)**0.5))
+
+    A_ref_logp = roll_in_info['act_ref_logp']
+    X_hp1 = roll_in_info['obs_after_ref']
+    avg_rew_sofar = roll_in_info['avg_rew']
+    success_rate = roll_in_info['success_rate']
+    print("## at training pi_{0}, collect {1} many triples, avg_rew_so_far {2}, success_rate {3} ##".format(h,X_h.shape[0], avg_rew_sofar, success_rate))
+
+    js,avg_dis_to_goal, avg_dis_to_goal_exp = js_from_samples(X_h, expert_trajs[:,h,:], env_id)
+    print('estimated JS-divergence at step {0} is {1}, avg dis to goal {2}, expert avg dis to goal {3}'.format(h, js, avg_dis_to_goal, avg_dis_to_goal_exp))
+
+    X_star_hp1 = expert_trajs[:,h+1,:] #(x) from expert at h+1
+    game_utilities = minmax_solver(X_h, A_h, X_hp1, X_star_hp1, A_ref_logp, pis[h], T, lr, h=h+1)
+
+    if train_all == True: #option: train all previous policy using the generated data here. 
+        for t in range(h): #train pi_0, pi_1, ..., pi_{h-1} using the generate data as well:
+            print("--------at training {0}-th policy inside training {1}-th policy----------".format(t,h))
+            X_t = roll_in_info['trajs_obs'][:,t] #X_t
+            A_t = roll_in_info['trajs_act'][:,t] #A_t
+            X_tp1 = roll_in_info['trajs_obs'][:,t+1] if t < h-1 else X_h #X_h is the states generated after executing x_{h-1}
+            A_ref_logp_t = roll_in_info['trajs_act_logp'][:,t] #logp of A_t
+            X_star_tp1 = expert_trajs[:,t+1]
+            game_us = minmax_solver(X_t, A_t, X_tp1, X_star_tp1, A_ref_logp_t, pis[t], int(T/2), lr = 1e-3, h=None)
+
+
+
+def train_offline(env, env_id, pis, expert_trajs, H, num_roll_in, T, lr, warm_start = False, mixing = False, monitor_env = None):
     #H: length of trajectory, meaning we need to train H-1 many policies
     #at x_h, pi_h results x_{h+1}, with h starting from 0
 
@@ -131,11 +259,15 @@ def train_offline(env, env_id, pis, expert_trajs, H, num_roll_in, T, lr, warm_st
     elif isinstance(env.action_space, gym.spaces.Box):
         uniform_pi = uniform_policy_continuous(env.action_space.shape[0],
                                                  env.action_space.low[0], env.action_space.high[0])
+
     elif isinstance(env.action_space, gym.spaces.MultiDiscrete):
         uniform_pi = uniform_policy_MultiDiscrete(env.action_space.nvec)
 
     for h in range(H-1):
         print("############## training pi_{0} ###################".format(h))
+
+        #if monitor_env is not None and h > 0:
+            #record_video(monitor_env, pis[0:h], env_id, h)
 
         if mixing == True and h > 0:
             print("pi_ref resulting from mixing..")
@@ -143,37 +275,22 @@ def train_offline(env, env_id, pis, expert_trajs, H, num_roll_in, T, lr, warm_st
         else:
             pi_ref = uniform_pi
 
-        roll_in_info = traj_segment_generate(pis[0:h], env, env_id, num_roll_in, stochastic=True, pi_ref = pi_ref)
-        X_h = roll_in_info['obs_after_roll_in']
-        A_h = roll_in_info['act_ref']
-        A_ref_logp = roll_in_info['act_ref_logp']
-        X_hp1 = roll_in_info['obs_after_ref']
-        avg_rew_sofar = roll_in_info['avg_rew']
-        success_rate = roll_in_info['success_rate']
-        assert X_h.shape[0] == X_hp1.shape[0]
-        print("## at training pi_{0}, collect {1} many triples, avg_rew_so_far {2}, success_rate {3} ##".format(h,
-                                                                        X_h.shape[0], avg_rew_sofar, success_rate))
-        js = js_from_samples(X_h, expert_trajs[:,h,:])
-        print("estimated JS-divergence at step {0} is {1}".format(h, js))
-        #note: X is at time step h, and x_next is at h+1
-
-        #extract corresponding expert data at h+1 from expert trajectories
-        X_star_hp1 = expert_trajs[:,h+1,:] #(x) from expert at h+1
-
-        #warm start policy pi_{h} by initizing it using pi_{h-1}
-        if h > 0 and warm_start is True:
-            print("warm start: initlizing the current policy using the previous one..")
+        repeats = 5
+        if h > 0 and warm_start:
+            print('warm start...')
             theta_hn1 = pis[h-1].get_traniable_variables_flat()
             pis[h].set_trainable_variable_flat(theta_hn1)
 
-        #solve min_max game here to compute pi_h:
-        game_utilities = minmax_solver(X_h, A_h, X_hp1, X_star_hp1, A_ref_logp, pis[h], T, lr)
+        for repeat in range(repeats):
+            print("at repeat {}".format(repeat))
+            pi_ref = uniform_pi if repeat == 0 else pis[h] # pis[h]
+            train_one_policy(h, env,env_id, pis, expert_trajs, H, int(num_roll_in/repeats), T, lr, pi_ref, warm_start, train_all=True)
 
     final_perf = traj_segment_generate(pis, env, env_id, 200, stochastic=True, pi_ref = None)
     return final_perf
 
 
-def train_online(env,env_id, pis, expert_trajs, H, num_timesteps, num_roll_in, lr):
+def train_online_2(env,env_id, pis, expert_trajs, H, num_timesteps, num_roll_in, lr):
     assert len(pis) == H-1
     T = int(np.ceil(num_timesteps*1./(num_roll_in*H*1.)))
     for t in range(T):

@@ -58,7 +58,8 @@ class MlpPolicy(object):
 
         if isinstance(ac_space, gym.spaces.Box): #double check if the diag is changed during training
             mean = dense(last_out, pdtype.param_shape()[0]//2, "polfinal", U.normc_initializer(0.01))
-            logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.zeros_initializer())
+            #logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.zeros_initializer())
+            logstd = tf.get_variable(name="logstd", initializer=tf.ones([1,pdtype.param_shape()[0]//2])*(-0.0)) #-1
             pdparam = tf.concat([mean, mean * 0.0 + logstd], axis=1)
         else:
             pdparam = dense(last_out, pdtype.param_shape()[0], "polfinal", U.normc_initializer(0.01))
@@ -75,10 +76,10 @@ class MlpPolicy(object):
         self._act = U.function([stochastic, self.ob], ac) #return the action and the 
 
         #compute logp:
-        #if isinstance(ac_space, gym.spaces.Box):
-        #    self.tmp_ac = tf.placeholder(tf.float32, shape = [sequence_length]+list(ac_space.shape))
-        #else:
-        self.tmp_ac = tf.placeholder(tf.uint8, shape = [sequence_length]+list(ac_space.shape))
+        if isinstance(ac_space, gym.spaces.Box):
+            self.tmp_ac = tf.placeholder(tf.float32, shape = [sequence_length]+list(ac_space.shape))
+        else:
+            self.tmp_ac = tf.placeholder(tf.uint8, shape = [sequence_length]+list(ac_space.shape))
         self._tf_logp = self.pd.logp(self.tmp_ac)
         self._logp = U.function([self.tmp_ac, self.ob], self._tf_logp)
 
@@ -179,7 +180,7 @@ class uniform_policy_continuous(object):
         self.volume = (np.abs(high-low))**self.dim
 
     def act(self, stochastic, ob):
-        act = np.random.uniform(low = self.low, high = self.high, size = self.dim)
+        act = np.random.uniform(low = self.low/2., high = self.high/2., size = self.dim)
         return act
 
     def logp(self, ob, ac):
