@@ -7,9 +7,9 @@ parser.add_argument('--num_expert_trajs', type = int, help='number of expert tra
 parser.add_argument('--num_timesteps', type=int, help='total number of training samples', default=1000000)
 args = parser.parse_args()
 
-#seeds = [128038,470925,491264,791625, 100880]
+seeds = [128038,470925,491264,791625, 100880, 203246,437783,491756,620105,875689]
 #seeds = [203246,437783,491756,620105,875689]
-seeds = [128038]
+#seeds = [128038]
 print("training ReacherDiscrete FAIL with 10 random seeds...")
 
 env_id = 'ReacherDiscrete-v2'
@@ -20,7 +20,7 @@ adam_lr = 1e-3
 horizon = 50
 num_expert_trajs = args.num_expert_trajs
 num_timesteps = args.num_timesteps
-min_max_game_iteration = 1000
+min_max_game_iteration = 100
 mixing=0
 warm_start=0
 

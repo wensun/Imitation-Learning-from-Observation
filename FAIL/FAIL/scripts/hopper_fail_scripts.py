@@ -20,7 +20,7 @@ adam_lr = 1e-3
 horizon = 100
 num_expert_trajs = args.num_expert_trajs
 num_timesteps = args.num_timesteps
-min_max_game_iteration = 1000
+min_max_game_iteration = 100
 mixing=0
 warm_start=0
 

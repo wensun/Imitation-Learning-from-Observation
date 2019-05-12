@@ -38,14 +38,14 @@ def compute_expert_perform(path, env_id):
             else:
                 rew = traj_i[t][2][0]
                 obs = traj_i[t][0][0]
-            #if success == False and np.linalg.norm(obs[-3:]) <= 0.05:
-            if env_id[0:5] == "Fetch":
-                d = np.linalg.norm(obs[3:6])
-                th = 0.05
-            elif env_id[0:4] == "Hand":
-                d = np.linalg.norm(obs[-15:])
-                th = 0.01
-            if success == False and d < th:
+            if success == False and np.linalg.norm(obs[-3:]) <= 0.05:
+            #if env_id[0:5] == "Fetch":
+            #    d = np.linalg.norm(obs[3:6])
+            #    th = 0.05
+            #elif env_id[0:4] == "Hand":
+            #    d = np.linalg.norm(obs[-15:])
+            #    th = 0.01
+            #if success == False and d < th:
                 success = True
                 success_times += 1
             traj_i_t_rew += rew
