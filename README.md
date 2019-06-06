@@ -1,5 +1,7 @@
 # Forward Adversarial Imitation Learning
 
+This repository implements the algorithms presented in the paper (published in ICML 2019)
+
 # Dependencies
 
 * We advise the reader to use virtualenv so that installing dependencies is easy
