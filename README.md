@@ -1,4 +1,6 @@
-# Forward Adversarial Imitation Learning
+# Forward Adversarial Imitation Learning (FAIL)
+
+This repository implements the algorithms presented in the [paper](https://arxiv.org/abs/1905.10948) (published in ICML 2019)
 
 # Dependencies
 
